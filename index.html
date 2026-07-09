@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+  <meta charset="UTF-8" />
+  <title>BLE Radar Gate Monitor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #020617;
+      color: #e5e7eb;
+    }
+
+    header {
+      padding: 18px 22px;
+      background: #0f172a;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+    }
+
+    .subtitle {
+      color: #94a3b8;
+      margin-top: 6px;
+      font-size: 14px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: auto;
+      padding: 20px;
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 900px) {
+      .container {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+    }
+
+    .radar-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    canvas {
+      width: 100%;
+      max-width: 620px;
+      aspect-ratio: 1 / 1;
+      background: radial-gradient(circle, #0f172a 0%, #020617 70%);
+      border-radius: 20px;
+      border: 1px solid #334155;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .metric {
+      background: #111827;
+      border: 1px solid #243244;
+      border-radius: 14px;
+      padding: 14px;
+    }
+
+    .label {
+      color: #94a3b8;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+
+    .value {
+      font-size: 26px;
+      font-weight: bold;
+    }
+
+    .small-value {
+      font-size: 16px;
+      font-weight: bold;
+      word-break: break-word;
+    }
+
+    .near { color: #22c55e; }
+    .medium { color: #facc15; }
+    .far { color: #fb923c; }
+    .lost { color: #ef4444; }
+
+    .bar-wrap {
+      margin-top: 12px;
+      height: 18px;
+      background: #1e293b;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #ef4444, #facc15, #22c55e);
+      transition: width 0.25s linear;
+    }
+
+    .legend {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+      color: #cbd5e1;
+      font-size: 13px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      display: inline-block;
+      margin-right: 6px;
+    }
+
+    .dot-near { background: #22c55e; }
+    .dot-medium { background: #facc15; }
+    .dot-far { background: #fb923c; }
+    .dot-lost { background: #ef4444; }
+
+    .note {
+      color: #cbd5e1;
+      line-height: 1.5;
+      font-size: 15px;
+    }
+
+    .mono {
+      font-family: Consolas, monospace;
+    }
+  </style>
+</head>
+
+<body>
+<header>
+  <h1>BLE Radar Gate Monitor</h1>
+  <div class="subtitle">Live визуализация на MikroTik BLE таг през ESP32-C3</div>
+</header>
+
+<div class="container">
+  <div class="card radar-card">
+    <canvas id="radar" width="700" height="700"></canvas>
+
+    <div class="legend">
+      <span><span class="dot dot-near"></span>близо</span>
+      <span><span class="dot dot-medium"></span>средно</span>
+      <span><span class="dot dot-far"></span>далеч</span>
+      <span><span class="dot dot-lost"></span>изгубен</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="grid">
+      <div class="metric">
+        <div class="label">Статус</div>
+        <div id="status" class="value lost">няма данни</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">RSSI</div>
+        <div id="rssi" class="value">-- dBm</div>
+        <div class="bar-wrap">
+          <div id="rssiBar" class="bar"></div>
+        </div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Засичания</div>
+        <div id="hits" class="value">0</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Последна промяна</div>
+        <div id="updated" class="small-value">--</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">ESP32</div>
+        <div id="device" class="small-value mono">--</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">MAC таг</div>
+        <div id="mac" class="small-value mono">--</div>
+      </div>
+    </div>
+
+    <div class="metric" style="margin-top:14px;">
+      <div class="label">Интерпретация</div>
+      <div id="interpretation" class="note">
+        Изчакване на данни от ESP32-C3...
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+  import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBgoyU92KHXAJhL3jurkRKtTC76H9j4g_I",
+    authDomain: "ble-gate-monitor.firebaseapp.com",
+    databaseURL: "https://ble-gate-monitor-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "ble-gate-monitor",
+    storageBucket: "ble-gate-monitor.firebasestorage.app",
+    messagingSenderId: "687859689278",
+    appId: "1:687859689278:web:df59136dfc840f29582e6f",
+    measurementId: "G-8N9GWP0579"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+
+  const canvas = document.getElementById("radar");
+  const ctx = canvas.getContext("2d");
+
+  const statusEl = document.getElementById("status");
+  const rssiEl = document.getElementById("rssi");
+  const rssiBarEl = document.getElementById("rssiBar");
+  const hitsEl = document.getElementById("hits");
+  const updatedEl = document.getElementById("updated");
+  const deviceEl = document.getElementById("device");
+  const macEl = document.getElementById("mac");
+  const interpretationEl = document.getElementById("interpretation");
+
+  let current = {
+    rssi: -100,
+    status: "lost",
+    hits: 0,
+    device: "--",
+    target_mac: "--",
+    updated_at: 0
+  };
+
+  let animatedRadius = 0;
+  let animatedAngle = -Math.PI / 4;
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function rssiToPercent(rssi) {
+    const min = -95;
+    const max = -35;
+    return clamp(((rssi - min) / (max - min)) * 100, 0, 100);
+  }
+
+  function rssiToRadius(rssi, maxRadius) {
+    const minRssi = -95;
+    const maxRssi = -35;
+    const normalized = clamp((maxRssi - rssi) / (maxRssi - minRssi), 0, 1);
+    return 35 + normalized * (maxRadius - 45);
+  }
+
+  function statusColor(status) {
+    if (status === "near") return "#22c55e";
+    if (status === "medium") return "#facc15";
+    if (status === "far") return "#fb923c";
+    return "#ef4444";
+  }
+
+  function statusText(status) {
+    if (status === "near") return "близо";
+    if (status === "medium") return "средно";
+    if (status === "far") return "далеч";
+    return "изгубен";
+  }
+
+  function statusClass(status) {
+    if (status === "near") return "value near";
+    if (status === "medium") return "value medium";
+    if (status === "far") return "value far";
+    return "value lost";
+  }
+
+  function interpretation(status, rssi) {
+    if (status === "near") {
+      return `Тагът е в близка зона. RSSI ${rssi} dBm. Това е силен сигнал, подходящ за тест на зона около ESP32.`;
+    }
+
+    if (status === "medium") {
+      return `Тагът е на средна дистанция. RSSI ${rssi} dBm. Добро за наблюдение, но за автоматично отваряне трябва допълнителна логика.`;
+    }
+
+    if (status === "far") {
+      return `Тагът е далеч или сигналът е слаб. RSSI ${rssi} dBm. Не трябва да задейства отваряне.`;
+    }
+
+    return "Тагът не е засечен скоро. Системата го счита за изгубен.";
+  }
+
+  function drawRadar() {
+    const w = canvas.width;
+    const h = canvas.height;
+    const cx = w / 2;
+    const cy = h / 2;
+    const maxRadius = Math.min(w, h) * 0.43;
+
+    ctx.clearRect(0, 0, w, h);
+
+    const grad = ctx.createRadialGradient(cx, cy, 20, cx, cy, maxRadius);
+    grad.addColorStop(0, "#0f172a");
+    grad.addColorStop(0.55, "#020617");
+    grad.addColorStop(1, "#000000");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    const rings = [
+      { r: maxRadius * 0.25, label: "близо" },
+      { r: maxRadius * 0.50, label: "средно" },
+      { r: maxRadius * 0.75, label: "далеч" },
+      { r: maxRadius, label: "край на зона" }
+    ];
+
+    ctx.lineWidth = 2;
+    ctx.font = "18px Arial";
+
+    rings.forEach((ring, i) => {
+      ctx.beginPath();
+      ctx.arc(cx, cy, ring.r, 0, Math.PI * 2);
+      ctx.strokeStyle = i === 0 ? "rgba(34,197,94,0.55)" :
+                        i === 1 ? "rgba(250,204,21,0.45)" :
+                        i === 2 ? "rgba(251,146,60,0.40)" :
+                                  "rgba(239,68,68,0.45)";
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(203,213,225,0.75)";
+      ctx.fillText(ring.label, cx + 12, cy - ring.r + 22);
+    });
+
+    ctx.strokeStyle = "rgba(148,163,184,0.20)";
+    ctx.lineWidth = 1;
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(a) * maxRadius, cy + Math.sin(a) * maxRadius);
+      ctx.stroke();
+    }
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, 18, 0, Math.PI * 2);
+    ctx.fillStyle = "#38bdf8";
+    ctx.fill();
+
+    ctx.fillStyle = "#e0f2fe";
+    ctx.font = "bold 18px Arial";
+    ctx.fillText("ESP32", cx - 28, cy - 28);
+
+    const targetRadius = current.status === "lost"
+      ? maxRadius * 1.03
+      : rssiToRadius(current.rssi, maxRadius);
+
+    animatedRadius += (targetRadius - animatedRadius) * 0.12;
+    animatedAngle += 0.01;
+
+    const tagX = cx + Math.cos(animatedAngle) * animatedRadius;
+    const tagY = cy + Math.sin(animatedAngle) * animatedRadius;
+
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(tagX, tagY);
+    ctx.strokeStyle = "rgba(125,211,252,0.45)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    const color = statusColor(current.status);
+
+    ctx.beginPath();
+    ctx.arc(tagX, tagY, 34, 0, Math.PI * 2);
+    ctx.fillStyle = color + "33";
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(tagX, tagY, 15, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+
+    ctx.fillStyle = "#f8fafc";
+    ctx.font = "bold 18px Arial";
+    ctx.fillText("TAG", tagX + 20, tagY - 10);
+
+    ctx.font = "16px Arial";
+    ctx.fillStyle = "#cbd5e1";
+    ctx.fillText(current.status === "lost" ? "lost" : current.rssi + " dBm", tagX + 20, tagY + 12);
+
+    requestAnimationFrame(drawRadar);
+  }
+
+  onValue(ref(db, "/ble/gate/live"), (snapshot) => {
+    const data = snapshot.val();
+    if (!data) return;
+
+    current = {
+      rssi: typeof data.rssi === "number" ? data.rssi : -100,
+      status: data.status || "lost",
+      hits: data.hits || 0,
+      device: data.device || "--",
+      target_mac: data.target_mac || "--",
+      updated_at: data.updated_at || 0
+    };
+
+    statusEl.textContent = statusText(current.status);
+    statusEl.className = statusClass(current.status);
+
+    rssiEl.textContent = current.status === "lost" ? "-- dBm" : current.rssi + " dBm";
+    rssiBarEl.style.width = rssiToPercent(current.rssi) + "%";
+
+    hitsEl.textContent = current.hits;
+    deviceEl.textContent = current.device;
+    macEl.textContent = current.target_mac;
+
+    if (current.updated_at > 0) {
+      updatedEl.textContent = new Date(current.updated_at).toLocaleTimeString("bg-BG");
+    } else {
+      updatedEl.textContent = "--";
+    }
+
+    interpretationEl.textContent = interpretation(current.status, current.rssi);
+  });
+
+  drawRadar();
+</script>
+</body>
+</html>
