@@ -45,6 +45,12 @@
       }
     }
 
+    .section {
+      max-width: 1350px;
+      margin: 0 auto 20px auto;
+      padding: 0 20px;
+    }
+
     .card {
       background: #0f172a;
       border: 1px solid #1e293b;
@@ -116,10 +122,15 @@
     .medium { color: #facc15; }
     .far { color: #fb923c; }
     .lost { color: #ef4444; }
+
     .rising { color: #22c55e; }
     .falling { color: #ef4444; }
     .stable { color: #facc15; }
     .unknown { color: #94a3b8; }
+
+    .ok { color: #22c55e; }
+    .bad { color: #ef4444; }
+    .warn { color: #facc15; }
 
     .bar-wrap {
       margin-top: 12px;
@@ -168,12 +179,6 @@
       font-family: Consolas, monospace;
     }
 
-    .section {
-      max-width: 1350px;
-      margin: 0 auto 20px auto;
-      padding: 0 20px;
-    }
-
     table {
       width: 100%;
       border-collapse: collapse;
@@ -206,6 +211,7 @@
       color: #94a3b8;
       font-size: 13px;
       margin-top: 10px;
+      line-height: 1.5;
     }
   </style>
 </head>
@@ -295,6 +301,98 @@
 
 <div class="section">
   <div class="card">
+    <div class="label">Телеметрия от MikroTik тага</div>
+
+    <div class="grid" style="margin-top:12px;">
+      <div class="metric">
+        <div class="label">Батерия</div>
+        <div id="tagBattery" class="value">-- %</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Формат на пакета</div>
+        <div id="tagFormat" class="small-value mono">--</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">MikroTik payload</div>
+        <div id="tagMikrotik" class="value">--</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Encrypted</div>
+        <div id="tagEncrypted" class="value">--</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Uptime</div>
+        <div id="tagUptime" class="small-value">--</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Общо ускорение</div>
+        <div id="tagAccelTotal" class="value">-- g</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Acceleration X</div>
+        <div id="tagAccelX" class="value">-- g</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Acceleration Y</div>
+        <div id="tagAccelY" class="value">-- g</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Acceleration Z</div>
+        <div id="tagAccelZ" class="value">-- g</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Tilt / наклон</div>
+        <div id="tagTilt" class="value">--</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Free fall</div>
+        <div id="tagFreeFall" class="value">--</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Impact X</div>
+        <div id="tagImpactX" class="value">--</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Impact Y</div>
+        <div id="tagImpactY" class="value">--</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Impact Z</div>
+        <div id="tagImpactZ" class="value">--</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Reed switch</div>
+        <div id="tagReed" class="value">--</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Accel disabled</div>
+        <div id="tagAccelDisabled" class="value">--</div>
+      </div>
+    </div>
+
+    <div class="footer-note">
+      Данните идват от MikroTik BLE payload. Ако някое поле е празно, конкретният advertising пакет не го е съдържал или payload-ът е криптиран.
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="card">
     <div class="label">Графика на сигнала</div>
     <canvas id="rssiChart" width="1200" height="280"></canvas>
     <div class="footer-note">
@@ -315,12 +413,16 @@
           <th>Статус</th>
           <th>Тренд</th>
           <th>Δ dBm</th>
+          <th>Батерия</th>
+          <th>Accel total</th>
+          <th>Tilt</th>
+          <th>Free fall</th>
           <th>Hits</th>
         </tr>
       </thead>
       <tbody id="historyTable">
         <tr>
-          <td colspan="7">Изчакване на история от Firebase...</td>
+          <td colspan="11">Изчакване на история от Firebase...</td>
         </tr>
       </tbody>
     </table>
@@ -365,6 +467,23 @@
   const deltaEl = document.getElementById("delta");
   const historyTableEl = document.getElementById("historyTable");
 
+  const tagBatteryEl = document.getElementById("tagBattery");
+  const tagFormatEl = document.getElementById("tagFormat");
+  const tagMikrotikEl = document.getElementById("tagMikrotik");
+  const tagEncryptedEl = document.getElementById("tagEncrypted");
+  const tagUptimeEl = document.getElementById("tagUptime");
+  const tagAccelTotalEl = document.getElementById("tagAccelTotal");
+  const tagAccelXEl = document.getElementById("tagAccelX");
+  const tagAccelYEl = document.getElementById("tagAccelY");
+  const tagAccelZEl = document.getElementById("tagAccelZ");
+  const tagTiltEl = document.getElementById("tagTilt");
+  const tagFreeFallEl = document.getElementById("tagFreeFall");
+  const tagImpactXEl = document.getElementById("tagImpactX");
+  const tagImpactYEl = document.getElementById("tagImpactY");
+  const tagImpactZEl = document.getElementById("tagImpactZ");
+  const tagReedEl = document.getElementById("tagReed");
+  const tagAccelDisabledEl = document.getElementById("tagAccelDisabled");
+
   let current = {
     raw_rssi: -100,
     rssi: -100,
@@ -377,7 +496,8 @@
     target_mac: "--",
     updated_at: 0,
     near_threshold: -58,
-    medium_threshold: -70
+    medium_threshold: -70,
+    telemetry: null
   };
 
   let historyRows = [];
@@ -441,6 +561,40 @@
     return new Date(ms).toLocaleTimeString("bg-BG");
   }
 
+  function yesNo(value) {
+    return value ? "да" : "не";
+  }
+
+  function boolClass(value) {
+    return value ? "value near" : "value stable";
+  }
+
+  function formatUptime(seconds) {
+    if (seconds === null || seconds === undefined) return "--";
+
+    const s = Number(seconds);
+    if (!Number.isFinite(s)) return "--";
+
+    const days = Math.floor(s / 86400);
+    const hours = Math.floor((s % 86400) / 3600);
+    const minutes = Math.floor((s % 3600) / 60);
+    const sec = Math.floor(s % 60);
+
+    if (days > 0) return `${days}д ${hours}ч ${minutes}м`;
+    if (hours > 0) return `${hours}ч ${minutes}м ${sec}с`;
+    return `${minutes}м ${sec}с`;
+  }
+
+  function valueOrDash(value, suffix = "") {
+    if (value === null || value === undefined) return "--";
+    return `${value}${suffix}`;
+  }
+
+  function updateBoolMetric(element, value) {
+    element.textContent = yesNo(value);
+    element.className = boolClass(value);
+  }
+
   function interpretation(data) {
     const status = data.status;
     const rssi = data.rssi;
@@ -472,6 +626,51 @@
     }
 
     return `${statusPart} ${trendPart}`;
+  }
+
+  function updateTelemetry(telemetry) {
+    if (!telemetry) {
+      tagBatteryEl.textContent = "-- %";
+      tagFormatEl.textContent = "--";
+      tagMikrotikEl.textContent = "--";
+      tagEncryptedEl.textContent = "--";
+      tagUptimeEl.textContent = "--";
+      tagAccelTotalEl.textContent = "-- g";
+      tagAccelXEl.textContent = "-- g";
+      tagAccelYEl.textContent = "-- g";
+      tagAccelZEl.textContent = "-- g";
+      tagTiltEl.textContent = "--";
+      tagFreeFallEl.textContent = "--";
+      tagImpactXEl.textContent = "--";
+      tagImpactYEl.textContent = "--";
+      tagImpactZEl.textContent = "--";
+      tagReedEl.textContent = "--";
+      tagAccelDisabledEl.textContent = "--";
+      return;
+    }
+
+    tagBatteryEl.textContent = valueOrDash(telemetry.battery_percent, " %");
+    tagBatteryEl.className = "value " + ((telemetry.battery_percent ?? 0) > 30 ? "near" : "far");
+
+    tagFormatEl.textContent = telemetry.format || "--";
+
+    updateBoolMetric(tagMikrotikEl, telemetry.mikrotik_detected);
+    updateBoolMetric(tagEncryptedEl, telemetry.encrypted);
+
+    tagUptimeEl.textContent = formatUptime(telemetry.uptime_seconds);
+
+    tagAccelTotalEl.textContent = valueOrDash(telemetry.accel_total, " g");
+    tagAccelXEl.textContent = valueOrDash(telemetry.accel_x, " g");
+    tagAccelYEl.textContent = valueOrDash(telemetry.accel_y, " g");
+    tagAccelZEl.textContent = valueOrDash(telemetry.accel_z, " g");
+
+    updateBoolMetric(tagTiltEl, telemetry.tilt);
+    updateBoolMetric(tagFreeFallEl, telemetry.free_fall);
+    updateBoolMetric(tagImpactXEl, telemetry.impact_x);
+    updateBoolMetric(tagImpactYEl, telemetry.impact_y);
+    updateBoolMetric(tagImpactZEl, telemetry.impact_z);
+    updateBoolMetric(tagReedEl, telemetry.reed_switch);
+    updateBoolMetric(tagAccelDisabledEl, telemetry.accel_disabled);
   }
 
   function drawRadar() {
@@ -659,13 +858,14 @@
     const rows = historyRows.slice(-20).reverse();
 
     if (!rows.length) {
-      historyTableEl.innerHTML = `<tr><td colspan="7">Няма записи в историята.</td></tr>`;
+      historyTableEl.innerHTML = `<tr><td colspan="11">Няма записи в историята.</td></tr>`;
       return;
     }
 
     historyTableEl.innerHTML = rows.map(row => {
       const delta = row.delta_rssi || 0;
       const deltaText = delta > 0 ? "+" + delta : String(delta);
+      const telemetry = row.telemetry || {};
 
       return `
         <tr>
@@ -675,6 +875,10 @@
           <td class="${row.status || "unknown"}">${statusText(row.status)}</td>
           <td class="${row.trend || "unknown"}">${trendText(row.trend)}</td>
           <td>${deltaText}</td>
+          <td>${valueOrDash(telemetry.battery_percent, " %")}</td>
+          <td>${valueOrDash(telemetry.accel_total, " g")}</td>
+          <td>${yesNo(telemetry.tilt)}</td>
+          <td>${yesNo(telemetry.free_fall)}</td>
           <td>${row.hits ?? "--"}</td>
         </tr>
       `;
@@ -697,7 +901,8 @@
       target_mac: data.target_mac || "--",
       updated_at: data.updated_at || 0,
       near_threshold: data.near_threshold ?? -58,
-      medium_threshold: data.medium_threshold ?? -70
+      medium_threshold: data.medium_threshold ?? -70,
+      telemetry: data.telemetry || null
     };
 
     statusEl.textContent = statusText(current.status);
@@ -720,6 +925,8 @@
 
     updatedEl.textContent = formatTime(current.updated_at);
     interpretationEl.textContent = interpretation(current);
+
+    updateTelemetry(current.telemetry);
   });
 
   const historyQuery = query(ref(db, "/ble/gate/history"), limitToLast(60));
@@ -738,14 +945,15 @@
       const row = data[key] || {};
       return {
         key,
-        time: row.time || 0,
+        time: row.updated_at || row.time || 0,
         raw_rssi: row.raw_rssi,
         rssi: row.rssi,
         smooth_rssi: row.smooth_rssi,
         status: row.status || "unknown",
         trend: row.trend || "unknown",
         delta_rssi: row.delta_rssi || 0,
-        hits: row.hits || 0
+        hits: row.hits || 0,
+        telemetry: row.telemetry || {}
       };
     }).sort((a, b) => a.time - b.time);
 
