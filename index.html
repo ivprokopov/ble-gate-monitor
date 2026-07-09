@@ -31,15 +31,15 @@
     }
 
     .container {
-      max-width: 1200px;
+      max-width: 1350px;
       margin: auto;
       padding: 20px;
       display: grid;
-      grid-template-columns: 1.1fr 0.9fr;
+      grid-template-columns: 1.05fr 0.95fr;
       gap: 20px;
     }
 
-    @media (max-width: 900px) {
+    @media (max-width: 1000px) {
       .container {
         grid-template-columns: 1fr;
       }
@@ -61,17 +61,31 @@
 
     canvas {
       width: 100%;
-      max-width: 620px;
+      max-width: 650px;
       aspect-ratio: 1 / 1;
       background: radial-gradient(circle, #0f172a 0%, #020617 70%);
       border-radius: 20px;
       border: 1px solid #334155;
     }
 
+    #rssiChart {
+      width: 100%;
+      max-width: none;
+      height: 280px;
+      aspect-ratio: auto;
+      border-radius: 16px;
+    }
+
     .grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 14px;
+    }
+
+    @media (max-width: 650px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     .metric {
@@ -88,7 +102,7 @@
     }
 
     .value {
-      font-size: 26px;
+      font-size: 28px;
       font-weight: bold;
     }
 
@@ -102,6 +116,10 @@
     .medium { color: #facc15; }
     .far { color: #fb923c; }
     .lost { color: #ef4444; }
+    .rising { color: #22c55e; }
+    .falling { color: #ef4444; }
+    .stable { color: #facc15; }
+    .unknown { color: #94a3b8; }
 
     .bar-wrap {
       margin-top: 12px;
@@ -149,13 +167,53 @@
     .mono {
       font-family: Consolas, monospace;
     }
+
+    .section {
+      max-width: 1350px;
+      margin: 0 auto 20px auto;
+      padding: 0 20px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      overflow: hidden;
+      border-radius: 12px;
+    }
+
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid #243244;
+      text-align: left;
+    }
+
+    th {
+      color: #93c5fd;
+      font-weight: bold;
+      background: #111827;
+    }
+
+    td {
+      color: #e5e7eb;
+    }
+
+    tr:hover td {
+      background: #111827;
+    }
+
+    .footer-note {
+      color: #94a3b8;
+      font-size: 13px;
+      margin-top: 10px;
+    }
   </style>
 </head>
 
 <body>
 <header>
   <h1>BLE Radar Gate Monitor</h1>
-  <div class="subtitle">Live визуализация на MikroTik BLE таг през ESP32-C3</div>
+  <div class="subtitle">Live визуализация на MikroTik BLE таг през ESP32-C3, Firebase и GitHub Pages</div>
 </header>
 
 <div class="container">
@@ -178,11 +236,26 @@
       </div>
 
       <div class="metric">
-        <div class="label">RSSI</div>
+        <div class="label">Изгладен RSSI</div>
         <div id="rssi" class="value">-- dBm</div>
         <div class="bar-wrap">
           <div id="rssiBar" class="bar"></div>
         </div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Суров RSSI</div>
+        <div id="rawRssi" class="value">-- dBm</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Тренд</div>
+        <div id="trend" class="value unknown">--</div>
+      </div>
+
+      <div class="metric">
+        <div class="label">Промяна</div>
+        <div id="delta" class="value">0 dBm</div>
       </div>
 
       <div class="metric">
@@ -204,6 +277,11 @@
         <div class="label">MAC таг</div>
         <div id="mac" class="small-value mono">--</div>
       </div>
+
+      <div class="metric">
+        <div class="label">Прагове</div>
+        <div id="thresholds" class="small-value mono">--</div>
+      </div>
     </div>
 
     <div class="metric" style="margin-top:14px;">
@@ -215,9 +293,43 @@
   </div>
 </div>
 
+<div class="section">
+  <div class="card">
+    <div class="label">Графика на сигнала</div>
+    <canvas id="rssiChart" width="1200" height="280"></canvas>
+    <div class="footer-note">
+      Графиката използва изгладения RSSI от последните записи в историята. Колкото по-близо до 0 е стойността, толкова по-силен е сигналът.
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="card">
+    <div class="label">Последни измервания</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Час</th>
+          <th>Raw RSSI</th>
+          <th>Smooth RSSI</th>
+          <th>Статус</th>
+          <th>Тренд</th>
+          <th>Δ dBm</th>
+          <th>Hits</th>
+        </tr>
+      </thead>
+      <tbody id="historyTable">
+        <tr>
+          <td colspan="7">Изчакване на история от Firebase...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
-  import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+  import { getDatabase, ref, onValue, query, limitToLast } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyBgoyU92KHXAJhL3jurkRKtTC76H9j4g_I",
@@ -236,24 +348,39 @@
   const canvas = document.getElementById("radar");
   const ctx = canvas.getContext("2d");
 
+  const chartCanvas = document.getElementById("rssiChart");
+  const chartCtx = chartCanvas.getContext("2d");
+
   const statusEl = document.getElementById("status");
   const rssiEl = document.getElementById("rssi");
+  const rawRssiEl = document.getElementById("rawRssi");
   const rssiBarEl = document.getElementById("rssiBar");
   const hitsEl = document.getElementById("hits");
   const updatedEl = document.getElementById("updated");
   const deviceEl = document.getElementById("device");
   const macEl = document.getElementById("mac");
+  const thresholdsEl = document.getElementById("thresholds");
   const interpretationEl = document.getElementById("interpretation");
+  const trendEl = document.getElementById("trend");
+  const deltaEl = document.getElementById("delta");
+  const historyTableEl = document.getElementById("historyTable");
 
   let current = {
+    raw_rssi: -100,
     rssi: -100,
+    smooth_rssi: -100,
     status: "lost",
+    trend: "unknown",
+    delta_rssi: 0,
     hits: 0,
     device: "--",
     target_mac: "--",
-    updated_at: 0
+    updated_at: 0,
+    near_threshold: -58,
+    medium_threshold: -70
   };
 
+  let historyRows = [];
   let animatedRadius = 0;
   let animatedAngle = -Math.PI / 4;
 
@@ -295,20 +422,56 @@
     return "value lost";
   }
 
-  function interpretation(status, rssi) {
+  function trendText(trend) {
+    if (trend === "rising") return "покачва се";
+    if (trend === "falling") return "намалява";
+    if (trend === "stable") return "стабилен";
+    return "няма данни";
+  }
+
+  function trendClass(trend) {
+    if (trend === "rising") return "value rising";
+    if (trend === "falling") return "value falling";
+    if (trend === "stable") return "value stable";
+    return "value unknown";
+  }
+
+  function formatTime(ms) {
+    if (!ms || ms <= 0) return "--";
+    return new Date(ms).toLocaleTimeString("bg-BG");
+  }
+
+  function interpretation(data) {
+    const status = data.status;
+    const rssi = data.rssi;
+    const trend = data.trend;
+    const delta = data.delta_rssi || 0;
+
+    let statusPart = "";
+
     if (status === "near") {
-      return `Тагът е в близка зона. RSSI ${rssi} dBm. Това е силен сигнал, подходящ за тест на зона около ESP32.`;
+      statusPart = `Тагът е в близка зона. Изгладен RSSI ${rssi} dBm.`;
+    } else if (status === "medium") {
+      statusPart = `Тагът е на средна дистанция. Изгладен RSSI ${rssi} dBm.`;
+    } else if (status === "far") {
+      statusPart = `Тагът е далеч или сигналът е слаб. Изгладен RSSI ${rssi} dBm.`;
+    } else {
+      statusPart = "Тагът не е засечен скоро.";
     }
 
-    if (status === "medium") {
-      return `Тагът е на средна дистанция. RSSI ${rssi} dBm. Добро за наблюдение, но за автоматично отваряне трябва допълнителна логика.`;
+    let trendPart = "";
+
+    if (trend === "rising") {
+      trendPart = `Сигналът се покачва с около ${delta} dBm — вероятно тагът се приближава.`;
+    } else if (trend === "falling") {
+      trendPart = `Сигналът намалява с около ${Math.abs(delta)} dBm — вероятно тагът се отдалечава.`;
+    } else if (trend === "stable") {
+      trendPart = "Сигналът е относително стабилен.";
+    } else {
+      trendPart = "Няма достатъчно данни за посока на промяната.";
     }
 
-    if (status === "far") {
-      return `Тагът е далеч или сигналът е слаб. RSSI ${rssi} dBm. Не трябва да задейства отваряне.`;
-    }
-
-    return "Тагът не е засечен скоро. Системата го счита за изгубен.";
+    return `${statusPart} ${trendPart}`;
   }
 
   function drawRadar() {
@@ -352,6 +515,7 @@
 
     ctx.strokeStyle = "rgba(148,163,184,0.20)";
     ctx.lineWidth = 1;
+
     for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
       ctx.beginPath();
       ctx.moveTo(cx, cy);
@@ -408,39 +572,189 @@
     requestAnimationFrame(drawRadar);
   }
 
+  function drawRssiChart() {
+    const w = chartCanvas.width;
+    const h = chartCanvas.height;
+    const padLeft = 55;
+    const padRight = 20;
+    const padTop = 20;
+    const padBottom = 35;
+
+    chartCtx.clearRect(0, 0, w, h);
+
+    chartCtx.fillStyle = "#020617";
+    chartCtx.fillRect(0, 0, w, h);
+
+    const data = historyRows.slice(-30);
+
+    chartCtx.strokeStyle = "rgba(148,163,184,0.20)";
+    chartCtx.lineWidth = 1;
+    chartCtx.font = "13px Arial";
+    chartCtx.fillStyle = "#94a3b8";
+
+    const minRssi = -95;
+    const maxRssi = -35;
+
+    for (let i = 0; i <= 6; i++) {
+      const y = padTop + ((h - padTop - padBottom) / 6) * i;
+      chartCtx.beginPath();
+      chartCtx.moveTo(padLeft, y);
+      chartCtx.lineTo(w - padRight, y);
+      chartCtx.stroke();
+
+      const labelValue = Math.round(maxRssi - ((maxRssi - minRssi) / 6) * i);
+      chartCtx.fillText(labelValue + " dBm", 8, y + 4);
+    }
+
+    if (data.length < 2) {
+      chartCtx.fillStyle = "#94a3b8";
+      chartCtx.font = "16px Arial";
+      chartCtx.fillText("Няма достатъчно данни за графика.", padLeft, h / 2);
+      return;
+    }
+
+    function xForIndex(index) {
+      return padLeft + ((w - padLeft - padRight) / (data.length - 1)) * index;
+    }
+
+    function yForRssi(rssi) {
+      const normalized = (maxRssi - rssi) / (maxRssi - minRssi);
+      return padTop + normalized * (h - padTop - padBottom);
+    }
+
+    chartCtx.beginPath();
+
+    data.forEach((row, index) => {
+      const x = xForIndex(index);
+      const y = yForRssi(row.rssi);
+
+      if (index === 0) chartCtx.moveTo(x, y);
+      else chartCtx.lineTo(x, y);
+    });
+
+    chartCtx.strokeStyle = "#38bdf8";
+    chartCtx.lineWidth = 3;
+    chartCtx.stroke();
+
+    data.forEach((row, index) => {
+      const x = xForIndex(index);
+      const y = yForRssi(row.rssi);
+
+      chartCtx.beginPath();
+      chartCtx.arc(x, y, 4, 0, Math.PI * 2);
+      chartCtx.fillStyle = statusColor(row.status);
+      chartCtx.fill();
+    });
+
+    const first = data[0];
+    const last = data[data.length - 1];
+
+    chartCtx.fillStyle = "#cbd5e1";
+    chartCtx.font = "13px Arial";
+    chartCtx.fillText(formatTime(first.time), padLeft, h - 10);
+    chartCtx.fillText(formatTime(last.time), w - 95, h - 10);
+  }
+
+  function renderHistoryTable() {
+    const rows = historyRows.slice(-20).reverse();
+
+    if (!rows.length) {
+      historyTableEl.innerHTML = `<tr><td colspan="7">Няма записи в историята.</td></tr>`;
+      return;
+    }
+
+    historyTableEl.innerHTML = rows.map(row => {
+      const delta = row.delta_rssi || 0;
+      const deltaText = delta > 0 ? "+" + delta : String(delta);
+
+      return `
+        <tr>
+          <td>${formatTime(row.time)}</td>
+          <td>${row.raw_rssi ?? "--"} dBm</td>
+          <td><strong>${row.rssi ?? "--"} dBm</strong></td>
+          <td class="${row.status || "unknown"}">${statusText(row.status)}</td>
+          <td class="${row.trend || "unknown"}">${trendText(row.trend)}</td>
+          <td>${deltaText}</td>
+          <td>${row.hits ?? "--"}</td>
+        </tr>
+      `;
+    }).join("");
+  }
+
   onValue(ref(db, "/ble/gate/live"), (snapshot) => {
     const data = snapshot.val();
     if (!data) return;
 
     current = {
+      raw_rssi: typeof data.raw_rssi === "number" ? data.raw_rssi : -100,
       rssi: typeof data.rssi === "number" ? data.rssi : -100,
+      smooth_rssi: typeof data.smooth_rssi === "number" ? data.smooth_rssi : -100,
       status: data.status || "lost",
+      trend: data.trend || "unknown",
+      delta_rssi: typeof data.delta_rssi === "number" ? data.delta_rssi : 0,
       hits: data.hits || 0,
       device: data.device || "--",
       target_mac: data.target_mac || "--",
-      updated_at: data.updated_at || 0
+      updated_at: data.updated_at || 0,
+      near_threshold: data.near_threshold ?? -58,
+      medium_threshold: data.medium_threshold ?? -70
     };
 
     statusEl.textContent = statusText(current.status);
     statusEl.className = statusClass(current.status);
 
     rssiEl.textContent = current.status === "lost" ? "-- dBm" : current.rssi + " dBm";
+    rawRssiEl.textContent = current.status === "lost" ? "-- dBm" : current.raw_rssi + " dBm";
     rssiBarEl.style.width = rssiToPercent(current.rssi) + "%";
+
+    trendEl.textContent = trendText(current.trend);
+    trendEl.className = trendClass(current.trend);
+
+    const deltaText = current.delta_rssi > 0 ? "+" + current.delta_rssi : String(current.delta_rssi);
+    deltaEl.textContent = deltaText + " dBm";
 
     hitsEl.textContent = current.hits;
     deviceEl.textContent = current.device;
     macEl.textContent = current.target_mac;
+    thresholdsEl.textContent = `near ≥ ${current.near_threshold}, medium ≥ ${current.medium_threshold}`;
 
-    if (current.updated_at > 0) {
-      updatedEl.textContent = new Date(current.updated_at).toLocaleTimeString("bg-BG");
-    } else {
-      updatedEl.textContent = "--";
+    updatedEl.textContent = formatTime(current.updated_at);
+    interpretationEl.textContent = interpretation(current);
+  });
+
+  const historyQuery = query(ref(db, "/ble/gate/history"), limitToLast(60));
+
+  onValue(historyQuery, (snapshot) => {
+    const data = snapshot.val();
+
+    if (!data) {
+      historyRows = [];
+      renderHistoryTable();
+      drawRssiChart();
+      return;
     }
 
-    interpretationEl.textContent = interpretation(current.status, current.rssi);
+    historyRows = Object.keys(data).map(key => {
+      const row = data[key] || {};
+      return {
+        key,
+        time: row.time || 0,
+        raw_rssi: row.raw_rssi,
+        rssi: row.rssi,
+        smooth_rssi: row.smooth_rssi,
+        status: row.status || "unknown",
+        trend: row.trend || "unknown",
+        delta_rssi: row.delta_rssi || 0,
+        hits: row.hits || 0
+      };
+    }).sort((a, b) => a.time - b.time);
+
+    renderHistoryTable();
+    drawRssiChart();
   });
 
   drawRadar();
+  drawRssiChart();
 </script>
 </body>
 </html>
